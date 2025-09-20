@@ -9,9 +9,8 @@ def run_flask():
     app.run(host="0.0.0.0", port=5000, threaded=True, use_reloader=False)
 
 if __name__ == "__main__":
-    global APP_ID, APP_KEY
-    APP_ID = "Display Project"
-    APP_KEY = "fb6d4a48be924109a746cc024894159f"
+
+
 
 
 
