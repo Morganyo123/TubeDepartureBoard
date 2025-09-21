@@ -1,9 +1,9 @@
-# controller.py
+
 from threading import Lock
 
 _lock = Lock()
-_current_station_id = None
-_current_station_name = None
+_current_station_id = "940GZZLUKSX"
+_current_station_name = "Kings Cross and St Pancras"
 
 def set_station(station_id, station_name):
     global _current_station_id, _current_station_name

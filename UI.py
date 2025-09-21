@@ -2,7 +2,6 @@ import pygame
 from datetime import datetime
 import sys
 import requests
-import json
 
 
 APP_ID = "Display Project"

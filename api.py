@@ -1,11 +1,8 @@
-# server.py
 from flask import Flask, request, jsonify, send_from_directory
 import requests
 import controller  # our shared state
 
 app = Flask(__name__)
-
-
 
 @app.route('/')
 def index():

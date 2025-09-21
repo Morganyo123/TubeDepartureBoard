@@ -2,61 +2,7 @@ import threading
 import requests
 import time
 from queue import Queue, Empty
-import json
-from pathlib import Path
-from flask.cli import prepare_import
-
 import controller
-
-
-def get_station_id(station_name):
-    url = f"https://api.tfl.gov.uk/StopPoint/Search/{station_name}"
-    response = requests.get(url)
-    data = response.json()
-    # Look for individual platforms first
-    for match in data.get('matches', []):
-
-        if 'HUB' not in match['id']:
-            return match['id']
-
-        else:
-            hub_id = match["id"]
-
-            hub_url = f"https://api.tfl.gov.uk/StopPoint/{hub_id}"
-            hub_response = requests.get(hub_url)
-            hub_data = hub_response.json()
-
-            # Find the first tube platform
-            for child in hub_data.get('children', []):
-                if any(mode in child['modes'] for mode in ['tube', 'dlr']):
-                    return child['id']
-
-    return None
-
-def fake_start_api_fetcher(api_queue: Queue, stop_event, interval=5):
-    """
-    Fake fetcher – pushes dummy data into the queue every `interval` seconds.
-    """
-    def loop():
-        while not stop_event.is_set():
-            fake_data = [
-                {"lineName": "Jubilee", "destinationName": "Stratford", "timeToStation": 120,"direction":"Northbound"},
-                {"lineName": "Jubilee", "destinationName": "Stanmore", "timeToStation": 300,"direction":"Northbound"},
-                {"lineName": "Jubilee", "destinationName": "Stratford", "timeToStation": 480,"direction":"Northbound"},
-                {"lineName": "Jubilee", "destinationName": "Stratford", "timeToStation": 480, "direction": "Northbound"},
-                {"lineName": "Jubilee", "destinationName": "Stratford", "timeToStation": 480, "direction": "Northbound"},
-                {"lineName": "Northern", "destinationName": "Morden", "timeToStation": 90,"direction":"Northbound"},
-                {"lineName": "Northern", "destinationName": "High Barnet", "timeToStation": 240,"direction":"Northbound"},
-                {"lineName": "Northern", "destinationName": "Edgware", "timeToStation": 420,"direction":"Northbound"},
-                {"lineName": "Northern", "destinationName": "Edgware", "timeToStation": 420, "direction": "Northbound"},
-                {"lineName": "Northern", "destinationName": "Edgware", "timeToStation": 420, "direction": "Northbound"}
-            ]
-            api_queue.put(fake_data)
-            time.sleep(interval)
-
-    t = threading.Thread(target=loop, daemon=True)
-    t.start()
-    return t
 import pygame
 
 def draw_text_box(screen, text, pos, font, text_color=(255,255,255),
@@ -102,11 +48,7 @@ def start_api_fetcher(api_queue: Queue, stop_event, interval=5):
     """
     Background thread fetching TFL data every interval seconds.
     """
-    HUB_TO_CHILDREN = {}
-    json_path = Path("hub_to_tube_children.json")
-    if json_path.exists():
-        with open(json_path) as f:
-            HUB_TO_CHILDREN = json.load(f)
+
 
     def loop():
         while not stop_event.is_set():
@@ -124,8 +66,6 @@ def start_api_fetcher(api_queue: Queue, stop_event, interval=5):
                     for child in hub_data.get('children', []):
                         if any(mode in child['modes'] for mode in ['tube']):
                             station_id = child['id']
-
-
 
                 resp = requests.get(f"https://api.tfl.gov.uk/StopPoint/{station_id}/Arrivals", timeout=5)
                 data = resp.json()
@@ -215,20 +155,24 @@ def run_gui():
 
     api_queue = Queue()
     stop_event = threading.Event()
-    api_thread = start_api_fetcher(api_queue, stop_event, interval=5)
+    api_thread = start_api_fetcher(api_queue, stop_event, interval=5) #every 5 seconds
 
     weather_queue = Queue()
     stop_weather = threading.Event()
-    weather_thread = start_weather_fetcher(weather_queue, stop_weather, interval=300)  # e.g. every 5 minutes
+    weather_thread = start_weather_fetcher(weather_queue, stop_weather, interval=300)  #every 5 minutes
 
     current_temp = 0
+
     running = True
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
 
-        # Update background color from controller
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:  # press ESC to exit
+                    running = False
+
         bg_color = BLACK
 
         station_id, station_name = controller.get_station()
@@ -266,9 +210,15 @@ def run_gui():
         screen.blit(date_surface, date_rect)
 
         #header station
-        station_surface = font_large.render(f"{station_name}", True, YELLOW)
-        station_rect = station_surface.get_rect(midbottom=(WIDTH / 2,40))
-        screen.blit(station_surface, station_rect)
+        try:
+            display_station_name = station_name.replace("'", "").replace("&", "and").replace("Underground Station", "").replace("International", "")
+
+
+            station_surface = font_large.render(f"{display_station_name}", True, YELLOW)
+            station_rect = station_surface.get_rect(midbottom=(WIDTH / 2,40))
+            screen.blit(station_surface, station_rect)
+        except:
+            pass
 
         if api_data:
             try:
@@ -282,7 +232,7 @@ def run_gui():
                 line_names = list(arrivals_by_line.keys())
 
                 if line_names:  # only if there are lines
-                    if time.time() - last_switch > 5:
+                    if time.time() - last_switch > 8:
                         current_index = (current_index + 1) % len(line_names)
                         last_switch = time.time()
                     # clamp current_index just in case
@@ -305,6 +255,7 @@ def run_gui():
                               border_width=2)
 
                 y = 125
+
                 for i, item in enumerate(arrivals):
 
                     #destination = item['destinationName']
@@ -329,6 +280,8 @@ def run_gui():
                     y += 80
             except:
                 pass
+
+
         # Large Clock
         now = time.strftime("%H.%M.%S")
         clock_surface = clock_font.render(now, True, YELLOW)
@@ -336,7 +289,7 @@ def run_gui():
         screen.blit(clock_surface, clock_rect)
 
         pygame.display.flip()
-        clock.tick(30)
+        clock.tick(2)
 
     stop_event.set()
     api_thread.join(timeout=1.0)
