@@ -113,12 +113,22 @@ def start_api_fetcher(api_queue: Queue, stop_event, interval=5):
             try:
                 station_id , station_name = controller.get_station()
 
-                if station_id in HUB_TO_CHILDREN:
-                    station_id = HUB_TO_CHILDREN[station_id][0]
+                if station_id.startswith("HUB"):
+                    hub_id = station_id
+
+                    hub_url = f"https://api.tfl.gov.uk/StopPoint/{hub_id}"
+                    hub_response = requests.get(hub_url)
+                    hub_data = hub_response.json()
+
+                    # Find the first tube platform
+                    for child in hub_data.get('children', []):
+                        if any(mode in child['modes'] for mode in ['tube']):
+                            station_id = child['id']
+
+
 
                 resp = requests.get(f"https://api.tfl.gov.uk/StopPoint/{station_id}/Arrivals", timeout=5)
                 data = resp.json()
-
                 api_queue.put(data)
 
             except Exception as e:
