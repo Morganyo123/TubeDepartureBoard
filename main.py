@@ -1,12 +1,13 @@
-import pygame
 import threading
 import requests
 import time
 from queue import Queue, Empty
+import json
+from pathlib import Path
+from flask.cli import prepare_import
 
-from PIL.FontFile import WIDTH
+import controller
 
-from server import controller
 
 def get_station_id(station_name):
     url = f"https://api.tfl.gov.uk/StopPoint/Search/{station_name}"
@@ -101,21 +102,28 @@ def start_api_fetcher(api_queue: Queue, stop_event, interval=5):
     """
     Background thread fetching TFL data every interval seconds.
     """
-    # Give controller a reference to api_queue for immediate fetch
-    controller.api_queue_ref = api_queue
+    HUB_TO_CHILDREN = {}
+    json_path = Path("hub_to_tube_children.json")
+    if json_path.exists():
+        with open(json_path) as f:
+            HUB_TO_CHILDREN = json.load(f)
 
     def loop():
         while not stop_event.is_set():
             try:
-                station = controller.station_name
-                station_id  = get_station_id(station)
+                station_id , station_name = controller.get_station()
 
-                url = f"https://api.tfl.gov.uk/StopPoint/{station_id}/Arrivals"
-                resp = requests.get(url, timeout=2)
-                if resp.ok:
-                    api_queue.put(resp.json())
-            except Exception:
-                pass
+                if station_id in HUB_TO_CHILDREN:
+                    station_id = HUB_TO_CHILDREN[station_id][0]
+
+                resp = requests.get(f"https://api.tfl.gov.uk/StopPoint/{station_id}/Arrivals", timeout=5)
+                data = resp.json()
+
+                api_queue.put(data)
+
+            except Exception as e:
+                print("Error fetching arrivals:", e)
+
             time.sleep(interval)
     t = threading.Thread(target=loop, daemon=True)
     t.start()
@@ -158,7 +166,7 @@ def start_weather_fetcher(weather_queue, stop_event, interval=600):
     return t
 
 
-def run_gui(command_queue):
+def run_gui():
     BLACK = (0, 0, 0)
     WHITE = (255, 255, 255)
     YELLOW = (255, 191, 0)
@@ -189,8 +197,9 @@ def run_gui(command_queue):
     font_small = pygame.font.Font('gui/simple_s.ttf', 26)
     font_large = pygame.font.Font('gui/simple_s.ttf', 42)
 
-    bg_color = controller.bg_color
+
     api_data = None
+
     current_index = 0
     last_switch = time.time()
 
@@ -201,6 +210,7 @@ def run_gui(command_queue):
     weather_queue = Queue()
     stop_weather = threading.Event()
     weather_thread = start_weather_fetcher(weather_queue, stop_weather, interval=300)  # e.g. every 5 minutes
+
     current_temp = 0
     running = True
     while running:
@@ -209,8 +219,9 @@ def run_gui(command_queue):
                 running = False
 
         # Update background color from controller
-        bg_color = controller.bg_color
+        bg_color = BLACK
 
+        station_id, station_name = controller.get_station()
         try:
             new_temp = weather_queue.get_nowait()
             current_temp = new_temp
@@ -245,67 +256,69 @@ def run_gui(command_queue):
         screen.blit(date_surface, date_rect)
 
         #header station
-        station_surface = font_large.render(f"{controller.station_name}", True, YELLOW)
+        station_surface = font_large.render(f"{station_name}", True, YELLOW)
         station_rect = station_surface.get_rect(midbottom=(WIDTH / 2,40))
         screen.blit(station_surface, station_rect)
 
         if api_data:
-            from collections import defaultdict
-            arrivals_by_line = defaultdict(list)
-            for item in api_data:
-                arrivals_by_line[item['lineName']].append(item)
-            for line, items in arrivals_by_line.items():
-                items.sort(key=lambda x: x['timeToStation'])
+            try:
+                from collections import defaultdict
+                arrivals_by_line = defaultdict(list)
+                for item in api_data:
+                    arrivals_by_line[item['lineName']].append(item)
+                for line, items in arrivals_by_line.items():
+                    items.sort(key=lambda x: x['timeToStation'])
 
-            line_names = list(arrivals_by_line.keys())
+                line_names = list(arrivals_by_line.keys())
 
-            if line_names:  # only if there are lines
-                if time.time() - last_switch > 5:
-                    current_index = (current_index + 1) % len(line_names)
-                    last_switch = time.time()
-                # clamp current_index just in case
-                if current_index >= len(line_names):
+                if line_names:  # only if there are lines
+                    if time.time() - last_switch > 5:
+                        current_index = (current_index + 1) % len(line_names)
+                        last_switch = time.time()
+                    # clamp current_index just in case
+                    if current_index >= len(line_names):
+                        current_index = 0
+                else:
                     current_index = 0
-            else:
-                current_index = 0
 
-            current_line = line_names[current_index]
+                current_line = line_names[current_index]
 
-            arrivals = arrivals_by_line[current_line][:4]
-            # draw line badge
-            draw_text_box(screen, current_line.replace("&","and"), (WIDTH/2, 80), row_font,
-                          text_color=WHITE,
-                          box_color=TUBE_LINE_COLORS.get(current_line),
+                arrivals = arrivals_by_line[current_line][:4]
+                # draw line badge
+                draw_text_box(screen, current_line.replace("&","and"), (WIDTH/2, 80), row_font,
+                              text_color=WHITE,
+                              box_color=TUBE_LINE_COLORS.get(current_line),
 
-                          border_radius=12,
-                          padding=(15, 8),
-                          border_color=WHITE,
-                          border_width=2)
+                              border_radius=12,
+                              padding=(15, 8),
+                              border_color=WHITE,
+                              border_width=2)
 
-            y = 125
-            for i, item in enumerate(arrivals):
+                y = 125
+                for i, item in enumerate(arrivals):
 
-                #destination = item['destinationName']
-                time_sec = item['timeToStation']
-                #direction = item['direction']
-                platform = item['platformName']
+                    #destination = item['destinationName']
+                    time_sec = item['timeToStation']
+                    #direction = item['direction']
+                    platform = item['platformName']
 
-                platform = platform.replace('-', '')
-                minutes = time_sec // 60
-                seconds = time_sec % 60
+                    platform = platform.replace('-', '')
+                    minutes = time_sec // 60
+                    seconds = time_sec % 60
 
-                # left side: time + destination
-                dep_surface = row_font.render(f"{i+1}. {platform} ", True, YELLOW)
-                screen.blit(dep_surface, (10, y))
+                    # left side: time + destination
+                    dep_surface = row_font.render(f"{i+1}. {platform} ", True, YELLOW)
+                    screen.blit(dep_surface, (10, y))
 
-                # right side: time to departure (aligned to right margin)
-                mins_surface = row_font.render(f"{minutes}min", True, YELLOW)
-                mins_rect = mins_surface.get_rect(topright=(WIDTH - 10, y))
-                screen.blit(mins_surface, mins_rect)
+                    # right side: time to departure (aligned to right margin)
+                    mins_surface = row_font.render(f"{minutes}min", True, YELLOW)
+                    mins_rect = mins_surface.get_rect(topright=(WIDTH - 10, y))
+                    screen.blit(mins_surface, mins_rect)
 
 
-                y += 80
-
+                    y += 80
+            except:
+                pass
         # Large Clock
         now = time.strftime("%H.%M.%S")
         clock_surface = clock_font.render(now, True, YELLOW)
@@ -317,4 +330,6 @@ def run_gui(command_queue):
 
     stop_event.set()
     api_thread.join(timeout=1.0)
+    weather_thread.join(timeout=1.0)
+
     pygame.quit()

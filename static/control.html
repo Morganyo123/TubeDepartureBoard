@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Select Station</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    #stationInput { width: 300px; padding: 8px; }
+    #suggestions { list-style: none; margin: 0; padding: 0; width: 300px; }
+    #suggestions li {
+      background: #f0f0f0;
+      padding: 6px;
+      border-bottom: 1px solid #ddd;
+      cursor: pointer;
+    }
+    #suggestions li:hover {
+      background: #e0e0ff;
+    }
+    #current { margin-top: 20px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>Select a Station</h1>
+  <input type="text" id="stationInput" placeholder="Type station name">
+  <ul id="suggestions"></ul>
+  <div id="current">Current Station: None</div>
+
+<script>
+const input = document.getElementById('stationInput');
+const suggestions = document.getElementById('suggestions');
+const currentDiv = document.getElementById('current');
+
+function updateCurrent(station) {
+  currentDiv.textContent = "Current Station: " + station.name + " (" + station.id + ")";
+}
+
+input.addEventListener('input', () => {
+  const q = input.value.trim();
+  if (q.length < 2) {
+    suggestions.innerHTML = '';
+    return;
+  }
+  fetch('/stations?q=' + encodeURIComponent(q))
+    .then(r => r.json())
+    .then(data => {
+      suggestions.innerHTML = '';
+      data.forEach(station => {
+        const li = document.createElement('li');
+        li.textContent = station.name;
+        li.onclick = () => {
+          input.value = station.name;
+          suggestions.innerHTML = '';
+          // send to server
+          fetch('/set_station', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(station)
+          })
+          .then(r => r.json())
+          .then(resp => {
+            if (resp.ok) {
+              updateCurrent(station);
+            }
+          });
+        };
+        suggestions.appendChild(li);
+      });
+    });
+});
+</script>
+</body>
+</html>
