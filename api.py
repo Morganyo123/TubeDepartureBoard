@@ -25,6 +25,7 @@ def stations():
             if item["id"].startswith("940G") or item["id"].startswith("HUB")
         ]
         return jsonify(results)
+
     return jsonify([])
 
 @app.route('/set_station', methods=['POST'])
