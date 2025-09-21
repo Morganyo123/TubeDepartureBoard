@@ -22,6 +22,7 @@ def stations():
         results = [
             {"id": item["id"], "name": item["name"]}
             for item in js.get("matches", [])
+            if item["id"].startswith("940G") or item["id"].startswith("HUB")
         ]
         return jsonify(results)
     return jsonify([])
