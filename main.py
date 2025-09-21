@@ -211,7 +211,7 @@ def run_gui():
 
         #header station
         try:
-            display_station_name = station_name.replace("'", "").replace("&", "and").replace("Underground Station", "").replace("International", "")
+            display_station_name = station_name.replace("'", "").replace("&", "").replace("Underground Station", "").replace("International", "")
 
 
             station_surface = font_large.render(f"{display_station_name}", True, YELLOW)
