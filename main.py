@@ -136,7 +136,7 @@ def run_gui():
 
 
     pygame.init()
-    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+    screen = pygame.display.set_mode((800, 480), pygame.FULLSCREEN)
     WIDTH,HEIGHT = screen.get_size()
 
     clock = pygame.time.Clock()
